@@ -46,7 +46,7 @@ class GithubClient
     request = method.new(url)
     attach_details_params(request)
     response = net_http.request(request)
-    JSON.parse response.body
+    JSON.parse response.body if !response.body.nil?
   end
 
   def attach_details_params(request)
