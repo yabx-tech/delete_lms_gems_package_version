@@ -1,4 +1,4 @@
-require './github_client'
+require_relative './github_client'
 
 puts "Action Started.. 🐎"
 
