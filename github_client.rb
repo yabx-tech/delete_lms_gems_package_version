@@ -1,8 +1,11 @@
+# frozen_string_literal: true
+
 require 'awesome_print'
 require 'net/http'
 require 'uri'
 require 'json'
 
+# Connects to github API and performs necessary actions
 class GithubClient
   attr_accessor :bearer_token, :package_version_name, :deletable_version_details
 
@@ -16,25 +19,38 @@ class GithubClient
   end
 
   def find_package_latest_version_details
-    package_all_versions_url = "#{ENV['GITHUB_API_URL']}/orgs/#{ENV['INPUT_ORGANISATION-NAME']}/packages/rubygems/#{ENV['INPUT_PACKAGE-NAME']}/versions"
-    all_versions = talk_to_brain(package_all_versions_url, Net::HTTP::Get)
-    puts "****** 🌟 All available versions 💫 ******"
+    base_url = "#{ENV['GITHUB_API_URL']}/orgs/#{ENV['INPUT_ORGANISATION-NAME']}/packages/rubygems/#{ENV['INPUT_PACKAGE-NAME']}/versions"
+    all_versions = []
+    url = base_url
+
+    loop do
+      response = talk_to_brain(url, Net::HTTP::Get)
+      break if response.nil? || response.empty?
+
+      all_versions.concat(response)
+
+      # Check if there is a next page
+      links = parse_link_header(@last_response_headers['link'])
+      break unless links && links['next']
+
+      url = links['next']
+    end
+
+    puts '****** 🌟 All available versions 💫 ******'
     ap all_versions
-    all_versions.find { |_| _['name'] == @deleting_version_name }
+    all_versions.find { |version| version['name'] == @deleting_version_name }
   end
 
   def delete_latest_package_version
     puts "Version to be deleted  #{@deleting_version_name}... 🚀"
     deletable_version_details = find_package_latest_version_details
-    if !deletable_version_details.nil?
-      puts "****** 🏹 Selected deletable version 💣 ******"
-      ap deletable_version_details
-      deleted_version_response = talk_to_brain(deletable_version_details['url'], Net::HTTP::Delete)
-      puts "Latest #{@deleting_version_name} version deleted successfully..💥 🔥"
-      deleted_version_response
-    else
-      puts "Latest version not found 🚫"
-    end
+    return puts 'Latest version not found 🚫' if deletable_version_details.nil?
+
+    puts '****** 🏹 Selected deletable version 💣 ******'
+    ap deletable_version_details
+    deleted_version_response = talk_to_brain(deletable_version_details['url'], Net::HTTP::Delete)
+    puts "Latest #{@deleting_version_name} version deleted successfully..💥 🔥"
+    deleted_version_response
   end
 
   private
@@ -42,17 +58,41 @@ class GithubClient
   def talk_to_brain(url, method)
     uri = URI(url)
     net_http = Net::HTTP.new(uri.host, uri.port)
-    net_http.use_ssl = uri.scheme == "https"
-    request = method.new(url)
+    net_http.use_ssl = uri.scheme == 'https'
+    request = method.new(uri)
     attach_details_params(request)
     response = net_http.request(request)
-    JSON.parse response.body if !response.body.nil?
+
+    # Store headers for pagination
+    @last_response_headers = response.each_header.to_h
+
+    if response.is_a?(Net::HTTPSuccess)
+      JSON.parse(response.body) if response.body && !response.body.empty?
+    else
+      puts "Request failed: #{response.code} #{response.message}"
+      nil
+    end
   end
 
   def attach_details_params(request)
-    request["Accept"] = ACCEPT
-    request["Authorization"] = bearer_token
-    request["X-GitHub-Api-Version"] = API_VERSION
+    request['Accept'] = ACCEPT
+    request['Authorization'] = bearer_token
+    request['X-GitHub-Api-Version'] = API_VERSION
     request
+  end
+
+  # Seperates the link header into a hash of rel => url
+  # rel will have next page URL
+  def parse_link_header(header)
+    return nil if header.nil?
+
+    links = {}
+    header.split(',').each do |part|
+      section = part.split(';')
+      url = section[0][/<(.*)>/, 1]
+      name = section[1][/rel="(.*)"/, 1]
+      links[name] = url
+    end
+    links
   end
 end
