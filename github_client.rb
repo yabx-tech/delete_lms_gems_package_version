@@ -24,15 +24,10 @@ class GithubClient
     url = base_url
 
     loop do
-      puts 'Using Latest delete version build, dated 7th Oct 2025'
-      puts "Fetching URL: #{url}" # For debugging, remove it later
       response = talk_to_brain(url, Net::HTTP::Get)
       break if response.nil? || response.empty?
 
-      puts "Link header: #{@last_response_headers['link'].inspect}" # For debugging, remove it later
       all_versions.concat(response)
-
-      # Check if there is a next page
       links = parse_link_header(@last_response_headers['link'])
       break unless links && links['next']
 
@@ -65,10 +60,7 @@ class GithubClient
     request = method.new(uri)
     attach_details_params(request)
     response = net_http.request(request)
-
-    # Store headers for pagination
     @last_response_headers = response.each_header.to_h
-    puts "Headers: #{@last_response_headers}" # For debugging, remove it later
 
     if response.is_a?(Net::HTTPSuccess)
       JSON.parse(response.body) if response.body && !response.body.empty?
